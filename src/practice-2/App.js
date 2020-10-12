@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo, useCallback } from 'react';
 import UserList from './UserList';
 import CreateUser from './CreateUser';
+import Counter from './Counter';
 
 // useMemo를 사용한 연산값 재사용
 const countActiveUsers = users => {
@@ -18,16 +19,14 @@ const App = () => {
   const { username, email } = inputs;
 
   // 최적화를 위한 useCallback
-  const onChange = useCallback(
-    e => {
-      const { name, value } = e.target;
-      setInputs({
-        ...inputs,
-        [name]: value
-      });
-    },
-    [inputs]
-  );
+  // 함수형 업데이트
+  const onChange = useCallback(e => {
+    const { name, value } = e.target;
+    setInputs(inputs => ({
+      ...inputs,
+      [name]: value
+    }));
+  }, []);
 
   // users도 useState를 사용하여 컴포넌트의 상태로서 관리하기
   const [users, setUsers] = useState([
@@ -57,6 +56,7 @@ const App = () => {
   const nextId = useRef(4);
 
   // 최적화를 위한 useCallback
+  // 함수형 업데이트
   const onCreate = useCallback(() => {
     // 배열에 항목을 추가하는 로직
     // 배열에 변화를 줄 때도 객체와 마찬가지로 불변성을 유지해야 한다
@@ -72,7 +72,7 @@ const App = () => {
     // 1. spread 연산자 사용
     // setUsers([...users, user]);
     // 2. concat 함수 사용
-    setUsers(users.concat(user));
+    setUsers(users => users.concat(user));
 
     setInputs({
       username: '',
@@ -80,7 +80,7 @@ const App = () => {
     });
 
     nextId.current += 1;
-  }, [email, username, users]);
+  }, [email, username]);
 
   // 배열의 항목 제거
   // 배열의 항목을 제거할때도 불변성을 유지해야 한다
@@ -89,30 +89,26 @@ const App = () => {
   // filter 함수는 배열에서 특정 조건을 만족하는 원소들만 추출하여 새로운 배열을 만든다
   // 최적화를 위한 useCallback
   // 리렌더링을 막기위해 함수형 업데이트
-  const onRemove = useCallback(
-    id => {
-      // user.id 가 파라미터, 일치하지 않는 원소만 추출해서 새로운 배열을 만듬
-      // 삭제니까 일치하는 것은 제외되고 배열이 만들어 진다
-      setUsers(users.filter(user => user.id !== id));
-    },
-    [users]
-  );
+  const onRemove = useCallback(id => {
+    // user.id 가 파라미터, 일치하지 않는 원소만 추출해서 새로운 배열을 만듬
+    // 삭제니까 일치하는 것은 제외되고 배열이 만들어 진다
+    setUsers(users => users.filter(user => user.id !== id));
+  }, []);
 
   // 배열의 항목 수정
   // 배열의 불변성을 유지하면서 배열을 업데이트 할 때 map 함수를 사용
   // user.id 가 id와 같으면 active를 반전시킨 상태로 새로운 배열을 반환하고
   // 아니면 기존 상태를 반환한다
   // 최적화를 위한 useCallback
-  const onToggle = useCallback(
-    id => {
-      setUsers(
-        users.map(user =>
-          user.id === id ? { ...user, active: !user.active } : user
-        )
-      );
-    },
-    [users]
-  );
+  // 리렌더링을 막기위해 함수형 업데이트
+  const onToggle = useCallback(id => {
+    console.log('토글');
+    setUsers(users =>
+      users.map(user =>
+        user.id === id ? { ...user, active: !user.active } : user
+      )
+    );
+  }, []);
 
   // useMemo를 사용하여 연산한 값 재사용하기
   const count = useMemo(() => countActiveUsers(users), [users]);
@@ -127,6 +123,7 @@ const App = () => {
       />
       <UserList users={users} onRemove={onRemove} onToggle={onToggle} />
       <div>활성 사용자 수 : {count}</div>
+      <Counter />
     </>
   );
 };
@@ -197,3 +194,30 @@ export default App;
 //   },
 //   [users]
 // );
+// User중 하나라도 수정하면 모든 User들이 리렌더링되고 CreateUser도 리렌더링 된다
+// 왜그럴까?? 간단하다
+// users 배열이 바뀔때마다 onCreate도 새로 만들어지고,
+// onToggle, onRemove도 새로 만들어지기 때문에 렌더링 된다
+// deps에 users가 들어있기 때문에 배열이 바뀔때마다 함수가 새로 만들어지는건 당연하다
+// 이걸 최적화 하고 싶으면?
+// deps에서 users를 지우고, 함수들에서 현재 useState로 관리하는 users를 참조하지 않게 하는것이다
+// 그런데 무턱대고 지웠다간 업데이트가 안된다!!!!! (중요)
+// 실제 onRemove, onToggle 에서 상태가 변경시 기억하지 않기 때문이다
+// 그럴땐 함수형 업데이트를 사용하면 된다
+// 변경
+// const onRemove = useCallback(id => {
+//   setUsers(users => users.filter(user => user.id !== id));
+// }, []);
+// 함수형 업데이트를 하게되면 setUsers 에 등록하는 콜백함수의 파라미터에서
+// 최신 users를 참조할 수 있기 때문에 deps에 users를 넣지 않아도 된다
+// onChange의 경우 함수형 업데이트를 해도 영향은 가지 않는다
+
+// ---------------------------------------------------------------------------------
+
+// 리액트 렌더링 최적화를 위한
+// useCallback, useMemo, React.memo 는 컴포넌트의 성능을 실제로 개선할 수 있을 상황에서만 사용
+// onClick 으로 설정해준 함수들은
+// useCallback으로 재사용한다고해서 리렌더링을 막을 수 있는 것은 아니므로 굳이 그렇게할 필요 없다
+// 추가적으로 렌더링 최적화를 하지 않을 경우
+// 컴포넌트에 React.memo를 사용하는 것은 불필요한 props 비교한 하는것이기 때문에
+// 실제로 렌더링을 방지할 수 있는 상황이 있는 경우에만 사용
